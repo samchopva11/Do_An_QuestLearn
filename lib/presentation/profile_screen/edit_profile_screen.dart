@@ -1,35 +1,31 @@
+// Dán toàn bộ code này vào file: lib/presentation/profile_screen/edit_profile_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/app_export.dart';
 
+// Phần EditProfileScreen và StreamBuilder giữ nguyên
 class EditProfileScreen extends StatelessWidget {
   const EditProfileScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // SỬA LỖI 1: Dùng StreamBuilder để lắng nghe trạng thái đăng nhập
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Trường hợp 1: Đang chờ hoặc chưa có dữ liệu user
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
-        // Trường hợp 2: Có dữ liệu user
         if (snapshot.hasData && snapshot.data != null) {
-          // Trả về widget chứa logic chính, truyền user vào
           return _EditProfileView(user: snapshot.data!);
         }
-
-        // Trường hợp 3: Không có user (đã bị đăng xuất) -> quay về login
-        // Đây là một biện pháp an toàn
         return const Scaffold(
           body: Center(child: Text("Bạn chưa đăng nhập. Đang điều hướng...")),
         );
@@ -38,9 +34,8 @@ class EditProfileScreen extends StatelessWidget {
   }
 }
 
-// SỬA LỖI 2: Tách logic giao diện ra một Widget riêng
 class _EditProfileView extends StatefulWidget {
-  final User user; // Nhận user từ StreamBuilder
+  final User user;
   const _EditProfileView({Key? key, required this.user}) : super(key: key);
 
   @override
@@ -51,20 +46,38 @@ class _EditProfileViewState extends State<_EditProfileView> {
   final _formKey = GlobalKey<FormState>();
   final _auth = FirebaseAuth.instance;
 
-  // Controllers
   late TextEditingController _displayNameController;
   late TextEditingController _dobController;
 
-  // Biến trạng thái
   DateTime? _selectedDate;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // Bây giờ chúng ta có thể chắc chắn widget.user không null
-    _displayNameController = TextEditingController(text: widget.user.displayName);
+    _displayNameController =
+        TextEditingController(text: widget.user.displayName);
     _dobController = TextEditingController();
+    _loadUserFromFirestore();
+  }
+
+  Future<void> _loadUserFromFirestore() async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.user.uid)
+          .get();
+      if (userDoc.exists && mounted) {
+        final data = userDoc.data();
+        if (data != null && data.containsKey('dateOfBirth')) {
+          final dobTimestamp = data['dateOfBirth'] as Timestamp;
+          _selectedDate = dobTimestamp.toDate();
+          _dobController.text = DateFormat('dd/MM/yyyy').format(_selectedDate!);
+        }
+      }
+    } catch (e) {
+      print("Không thể tải ngày sinh từ Firestore: $e");
+    }
   }
 
   @override
@@ -74,9 +87,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
     super.dispose();
   }
 
-  // Hàm chọn ngày tháng (không đổi)
   Future<void> _selectDate(BuildContext context) async {
-    // ... (code không đổi)
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
@@ -91,41 +102,75 @@ class _EditProfileViewState extends State<_EditProfileView> {
     }
   }
 
-  // Hàm xử lý lưu thay đổi
   Future<void> _saveProfile() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      try {
-        User? currentUser = _auth.currentUser;
-        if (currentUser == null) return; // Kiểm tra an toàn
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
-        // 1. Cập nhật Display Name
-        if (_displayNameController.text != currentUser.displayName) {
-          await currentUser.updateDisplayName(_displayNameController.text);
+    setState(() => _isLoading = true);
+
+    try {
+      User? currentUser = _auth.currentUser;
+      if (currentUser == null) return;
+
+      final newDisplayName = _displayNameController.text.trim();
+      Map<String, dynamic> firestoreUpdateData = {};
+      bool hasChanges = false;
+
+      // So sánh tên
+      if (newDisplayName != (currentUser.displayName ?? '')) {
+        await currentUser.updateDisplayName(newDisplayName);
+        firestoreUpdateData['displayName'] = newDisplayName;
+        hasChanges = true;
+      }
+
+      // So sánh ngày sinh
+      if (_selectedDate != null) {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+        final data = doc.data();
+        DateTime? currentDob;
+        if (data != null && data.containsKey('dateOfBirth')) {
+          currentDob = (data['dateOfBirth'] as Timestamp).toDate();
         }
+        // Chỉ cập nhật nếu ngày sinh mới khác ngày sinh cũ
+        if (currentDob == null || !_selectedDate!.isAtSameMomentAs(currentDob)) {
+          firestoreUpdateData['dateOfBirth'] = Timestamp.fromDate(_selectedDate!);
+          hasChanges = true;
+        }
+      }
 
-        // 2. Cập nhật ngày sinh (logic vẫn như cũ)
-        // ...
+      if (firestoreUpdateData.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .update(firestoreUpdateData);
+      }
 
+      if (hasChanges) {
         await currentUser.reload();
         Fluttertoast.showToast(msg: "Cập nhật thông tin thành công!");
+      } else {
+        Fluttertoast.showToast(msg: "Không có thông tin nào thay đổi.");
+      }
 
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
-      } catch (e) {
-        Fluttertoast.showToast(msg: "Lỗi: ${e.toString()}", backgroundColor: Colors.red);
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+          msg: "Lỗi: ${e.toString()}", backgroundColor: Colors.red);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
 
+  // ========================================================
+  // =====     PHẦN BUILD ĐÃ ĐƯỢC CẬP NHẬT              =====
+  // ========================================================
   @override
   Widget build(BuildContext context) {
-    // Phần giao diện chính không có thay đổi lớn
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -134,17 +179,10 @@ class _EditProfileViewState extends State<_EditProfileView> {
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator(color: Colors.white))
-                : IconButton(
-              icon: Icon(Icons.save),
-              onPressed: _saveProfile,
-            ),
-          ),
-        ],
+        // << THAY ĐỔI 1: Không cần nút lưu ở đây nữa >>
+        // actions: [
+        //   ...
+        // ],
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 3.h),
@@ -153,13 +191,13 @@ class _EditProfileViewState extends State<_EditProfileView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Trường Họ và Tên
               TextFormField(
                 controller: _displayNameController,
                 decoration: InputDecoration(
                   labelText: 'Họ và tên',
                   prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -169,37 +207,53 @@ class _EditProfileViewState extends State<_EditProfileView> {
                 },
               ),
               SizedBox(height: 3.h),
-
-              // Trường Email (dùng widget.user.email)
               TextFormField(
                 initialValue: widget.user.email,
                 readOnly: true,
                 decoration: InputDecoration(
                   labelText: 'Email',
                   prefixIcon: Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.grey[200],
                 ),
               ),
               SizedBox(height: 3.h),
-
-              // Trường Ngày tháng năm sinh
               TextFormField(
                 controller: _dobController,
                 readOnly: true,
                 decoration: InputDecoration(
                   labelText: 'Ngày sinh',
                   prefixIcon: Icon(Icons.calendar_today_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onTap: () => _selectDate(context),
               ),
 
-              SizedBox(height: 5.h),
+              // << THAY ĐỔI 2: THÊM NÚT CẬP NHẬT MỚI >>
+              SizedBox(height: 6.h),
+              SizedBox(
+                width: double.infinity,
+                height: 6.h,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _saveProfile,
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('Cập Nhật'),
+                  style: ElevatedButton.styleFrom(
+                    textStyle: AppTheme.lightTheme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 3.h),
               Text(
                 "Lưu ý: Để thay đổi mật khẩu, vui lòng quay lại màn hình Tài khoản và chọn 'Đổi mật khẩu'.",
-                style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
+                style: AppTheme.lightTheme.textTheme.bodySmall
+                    ?.copyWith(color: AppTheme.textSecondary),
                 textAlign: TextAlign.center,
               ),
             ],

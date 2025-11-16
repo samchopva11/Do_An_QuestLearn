@@ -4,8 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'dart:convert';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../core/app_export.dart';
 import '../add_edit_question_screen/add_edit_question_screen.dart';
+import '../admin_edit_category_screen/edit_category_screen.dart';
+// << 1. IMPORT MÀN HÌNH MỚI >>
+import '../admin_question_list_screen/admin_question_list_screen.dart';
 
 class AdminCategoryManagementScreen extends StatefulWidget {
   final String categoryId;
@@ -18,109 +22,36 @@ class AdminCategoryManagementScreen extends StatefulWidget {
       _AdminCategoryManagementScreenState();
 }
 
-class _AdminCategoryManagementScreenState
-    extends State<AdminCategoryManagementScreen> {
-
-  String _getDifficultyField(String difficulty) {
-    switch (difficulty) {
-      case 'Dễ':
-        return 'easyCount';
-      case 'Trung bình':
-        return 'mediumCount';
-      case 'Khó':
-        return 'hardCount';
-      default:
-        return '';
-    }
-  }
-
-  Future<void> _showDeleteConfirmationDialog(
-      String questionId, String difficulty) async {
+class _AdminCategoryManagementScreenState extends State<AdminCategoryManagementScreen> {
+  // Các hàm xử lý xóa và điều hướng (giữ nguyên không đổi)
+  Future<void> _showDeleteCategoryConfirmationDialog() async {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Xác nhận xóa'),
+          title: const Text('Xác Nhận Xóa Chủ Đề'),
           content: const SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text('Bạn có chắc chắn muốn xóa câu hỏi này không?'),
-                Text('Hành động này không thể hoàn tác.'),
+                Text('Bạn có chắc chắn muốn xóa toàn bộ chủ đề này?'),
+                Text(
+                  'TẤT CẢ câu hỏi bên trong cũng sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ),
           actions: <Widget>[
             TextButton(
               child: const Text('Hủy'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(dialogContext).pop(),
             ),
             TextButton(
-              child:
-              const Text('Xóa', style: TextStyle(color: AppTheme.error)),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                try {
-                  final categoryRef = FirebaseFirestore.instance
-                      .collection('categories')
-                      .doc(widget.categoryId);
-                  final questionRef =
-                  categoryRef.collection('questions').doc(questionId);
-
-                  // ==========================================================
-                  // =====    SỬA LỖI LOGIC XÓA: DÙNG TRANSACTION         =====
-                  // ==========================================================
-                  await FirebaseFirestore.instance.runTransaction((transaction) async {
-                    // Đọc giá trị hiện tại của category để kiểm tra bộ đếm
-                    DocumentSnapshot categorySnapshot = await transaction.get(categoryRef);
-                    if (!categorySnapshot.exists) {
-                      throw Exception("Chủ đề không tồn tại!");
-                    }
-
-                    // 1. Xóa document câu hỏi
-                    transaction.delete(questionRef);
-
-                    // 2. Cập nhật các bộ đếm trong document category cha
-                    final difficultyField = _getDifficultyField(difficulty);
-                    if (difficultyField.isNotEmpty) {
-                      final currentCount = (categorySnapshot.data() as Map<String, dynamic>)[difficultyField] ?? 0;
-
-                      // Chỉ giảm nếu bộ đếm lớn hơn 0 để tránh số âm
-                      if (currentCount > 0) {
-                        transaction.update(categoryRef, {
-                          'questionCount': FieldValue.increment(-1),
-                          difficultyField: FieldValue.increment(-1),
-                        });
-                      } else {
-                        // Nếu bộ đếm đã là 0 (trường hợp hiếm), chỉ giảm questionCount
-                        transaction.update(categoryRef, {
-                          'questionCount': FieldValue.increment(-1),
-                        });
-                      }
-                    } else {
-                      // Nếu không xác định được độ khó, chỉ giảm questionCount
-                      transaction.update(categoryRef, {'questionCount': FieldValue.increment(-1)});
-                    }
-                  });
-
-
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Đã xóa câu hỏi thành công')),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text('Lỗi khi xóa câu hỏi: $e'),
-                          backgroundColor: AppTheme.error),
-                    );
-                  }
-                }
+              child: const Text('Xóa Vĩnh Viễn', style: TextStyle(color: AppTheme.error)),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _handleDeleteCategory();
               },
             ),
           ],
@@ -129,28 +60,62 @@ class _AdminCategoryManagementScreenState
     );
   }
 
+  Future<void> _handleDeleteCategory() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final categoryRef = FirebaseFirestore.instance.collection('categories').doc(widget.categoryId);
+      final questionsQuery = categoryRef.collection('questions');
+      final questionSnapshot = await questionsQuery.get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in questionSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      batch.delete(categoryRef);
+      await batch.commit();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      Fluttertoast.showToast(msg: "Đã xóa chủ đề thành công!");
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      Fluttertoast.showToast(msg: "Lỗi khi xóa chủ đề: $e", backgroundColor: AppTheme.error);
+    }
+  }
+
+  Future<void> _navigateToEditScreen() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditCategoryScreen(categoryId: widget.categoryId),
+      ),
+    );
+    if (result == true && mounted) {
+      setState(() {});
+    }
+  }
+
+  // Hàm lấy màu (giữ nguyên)
   Color _getColorForDifficulty(String difficulty) {
     switch (difficulty) {
-      case 'Dễ':
-        return AppTheme.success;
-      case 'Trung bình':
-        return AppTheme.warning;
-      case 'Khó':
-        return AppTheme.error;
-      default:
-        return AppTheme.textSecondary;
+      case 'Dễ': return AppTheme.success;
+      case 'Trung bình': return AppTheme.warning;
+      case 'Khó': return AppTheme.error;
+      default: return AppTheme.textSecondary;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // ...Phần còn lại của file giữ nguyên, không có gì thay đổi...
     return Scaffold(
-      body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance
+      // << 2. THAY FUTUREBUILDER BẰNG STREAMBUILDER ĐỂ SỐ LƯỢNG CÂU HỎI CẬP NHẬT TỨC THÌ >>
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
             .collection('categories')
             .doc(widget.categoryId)
-            .get(),
+            .snapshots(), // Dùng snapshots()
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -159,14 +124,23 @@ class _AdminCategoryManagementScreenState
             return Center(child: Text("Lỗi: ${snapshot.error}"));
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("Không tìm thấy chủ đề."));
+            // Xử lý trường hợp chủ đề đã bị xóa
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Navigator.of(context).pop();
+              }
+            });
+            return const Center(child: Text("Chủ đề đã bị xóa. Đang quay lại..."));
           }
 
-          final categoryData =
-          snapshot.data!.data() as Map<String, dynamic>;
-          final String categoryName =
-              categoryData['name'] ?? 'Chủ đề không tên';
+          final categoryData = snapshot.data!.data() as Map<String, dynamic>;
+          final String categoryName = categoryData['name'] ?? 'Chủ đề không tên';
           final String base64Image = categoryData['imageBase64'] ?? '';
+
+          // Lấy số lượng câu hỏi từ categoryData
+          final int easyCount = categoryData['easyCount'] ?? 0;
+          final int mediumCount = categoryData['mediumCount'] ?? 0;
+          final int hardCount = categoryData['hardCount'] ?? 0;
 
           Widget imageWidget;
           if (base64Image.isNotEmpty) {
@@ -175,18 +149,10 @@ class _AdminCategoryManagementScreenState
               final imageBytes = base64Decode(pureBase64);
               imageWidget = Image.memory(imageBytes, fit: BoxFit.cover);
             } catch(e) {
-              imageWidget = Container(
-                color: AppTheme.surface,
-                child: Icon(Icons.broken_image, color: AppTheme.error),
-              );
+              imageWidget = Container(color: AppTheme.surface, child: Icon(Icons.broken_image, color: AppTheme.error));
             }
           } else {
-            imageWidget = Container(
-              color: AppTheme.surface,
-              child:
-              Icon(Icons.image_not_supported,
-                  color: AppTheme.textSecondary),
-            );
+            imageWidget = Container(color: AppTheme.surface, child: Icon(Icons.image_not_supported, color: AppTheme.textSecondary));
           }
 
           return CustomScrollView(
@@ -200,21 +166,23 @@ class _AdminCategoryManagementScreenState
                   icon: const Icon(Icons.arrow_back_ios_new),
                   onPressed: () => Navigator.pop(context),
                   color: Colors.white,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.3),
-                  ),
+                  style: IconButton.styleFrom(backgroundColor: Colors.black.withOpacity(0.3)),
                 ),
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.edit),
-                    onPressed: () {
-                      // TODO: Điều hướng đến màn hình Sửa thông tin chủ đề
-                    },
+                    onPressed: _navigateToEditScreen,
+                    tooltip: 'Sửa thông tin chủ đề',
                     color: Colors.white,
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black.withOpacity(0.3),
-                    ),
-                  )
+                    style: IconButton.styleFrom(backgroundColor: Colors.black.withOpacity(0.3)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever),
+                    onPressed: _showDeleteCategoryConfirmationDialog,
+                    tooltip: 'Xóa toàn bộ chủ đề',
+                    color: Colors.white,
+                    style: IconButton.styleFrom(backgroundColor: AppTheme.error.withOpacity(0.5)),
+                  ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
                   title: Text(
@@ -222,9 +190,7 @@ class _AdminCategoryManagementScreenState
                     style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      shadows: [
-                        const Shadow(blurRadius: 4, color: Colors.black54)
-                      ],
+                      shadows: [const Shadow(blurRadius: 4, color: Colors.black54)],
                     ),
                   ),
                   background: Stack(
@@ -246,124 +212,51 @@ class _AdminCategoryManagementScreenState
                   stretchModes: const [StretchMode.zoomBackground],
                 ),
               ),
+              // << 3. PHẦN BODY MỚI VỚI CÁC THẺ NHÓM CÂU HỎI >>
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(4.w, 4.w, 4.w, 12.h),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        "Quản lý Câu Hỏi",
-                        style: AppTheme.lightTheme.textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
+                      Text("Quản lý Câu Hỏi", style: AppTheme.lightTheme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
                       SizedBox(height: 1.h),
-                      Text(
-                        "Thêm, sửa, xóa các câu hỏi cho chủ đề này.",
-                        style: AppTheme.lightTheme.textTheme.bodyMedium
-                            ?.copyWith(color: AppTheme.textSecondary),
+                      Text("Chọn một mức độ để xem hoặc thêm câu hỏi mới.", style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary)),
+                      SizedBox(height: 4.h),
+
+                      // Thẻ nhóm Dễ
+                      _buildDifficultyCard(
+                          title: 'Dễ',
+                          count: easyCount,
+                          color: AppTheme.success,
+                          icon: Icons.sentiment_very_satisfied,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => AdminQuestionListScreen(categoryId: widget.categoryId, difficulty: 'Dễ')));
+                          }
                       ),
-                      SizedBox(height: 3.h),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('categories')
-                            .doc(widget.categoryId)
-                            .collection('questions')
-                            .orderBy('createdAt',
-                            descending: true)
-                            .snapshots(),
-                        builder: (context, questionSnapshot) {
-                          if (questionSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-                          if (questionSnapshot.hasError) {
-                            return Center(
-                                child: Text(
-                                    'Lỗi tải câu hỏi: ${questionSnapshot.error}'));
-                          }
-                          if (!questionSnapshot.hasData ||
-                              questionSnapshot.data!.docs.isEmpty) {
-                            return Center(
-                              child: Text('Chưa có câu hỏi nào trong chủ đề này.'),
-                            );
-                          }
+                      SizedBox(height: 2.h),
 
-                          final questions = questionSnapshot.data!.docs;
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: questions.length,
-                            itemBuilder: (context, index) {
-                              final questionDoc = questions[index];
-                              final questionData =
-                              questionDoc.data() as Map<String, dynamic>;
-                              final String difficulty =
-                                  questionData['difficulty'] ?? 'Không rõ';
+                      // Thẻ nhóm Trung bình
+                      _buildDifficultyCard(
+                          title: 'Trung bình',
+                          count: mediumCount,
+                          color: AppTheme.warning,
+                          icon: Icons.sentiment_neutral,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => AdminQuestionListScreen(categoryId: widget.categoryId, difficulty: 'Trung bình')));
+                          }
+                      ),
+                      SizedBox(height: 2.h),
 
-                              return Card(
-                                margin: EdgeInsets.only(bottom: 2.h),
-                                elevation: 2,
-                                shadowColor: AppTheme.shadowLight,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    child: Text('${index + 1}'),
-                                    backgroundColor: AppTheme.primary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  title: Text(
-                                    questionData['content'] ??
-                                        'Nội dung câu hỏi bị thiếu',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTheme
-                                        .lightTheme.textTheme.titleSmall
-                                        ?.copyWith(
-                                        fontWeight: FontWeight.w600),
-                                  ),
-                                  subtitle: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Chip(
-                                      label: Text(difficulty,
-                                          style: TextStyle(color: Colors.white)),
-                                      backgroundColor:
-                                      _getColorForDifficulty(difficulty),
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 2.w, vertical: 0),
-                                      labelStyle: AppTheme
-                                          .lightTheme.textTheme.labelSmall
-                                          ?.copyWith(color: Colors.white),
-                                      materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  ),
-                                  trailing: IconButton(
-                                    icon: Icon(Icons.delete_outline, color: AppTheme.error),
-                                    onPressed: () {
-                                      _showDeleteConfirmationDialog(
-                                          questionDoc.id, difficulty);
-                                    },
-                                  ),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            AddEditQuestionScreen(
-                                              categoryId: widget.categoryId,
-                                              questionId: questionDoc.id,
-                                            ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                          );
-                        },
+                      // Thẻ nhóm Khó
+                      _buildDifficultyCard(
+                          title: 'Khó',
+                          count: hardCount,
+                          color: AppTheme.error,
+                          icon: Icons.sentiment_very_dissatisfied,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => AdminQuestionListScreen(categoryId: widget.categoryId, difficulty: 'Khó')));
+                          }
                       ),
                     ],
                   ),
@@ -373,20 +266,60 @@ class _AdminCategoryManagementScreenState
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddEditQuestionScreen(
-                categoryId: widget.categoryId,
+      // << 4. BỎ FLOATINGACTIONBUTTON Ở ĐÂY >>
+      // floatingActionButton: ...
+    );
+  }
+
+  // << 5. WIDGET HELPER ĐỂ TẠO THẺ NHÓM ĐẸP HƠN >>
+  Widget _buildDifficultyCard({
+    required String title,
+    required int count,
+    required Color color,
+    required IconData icon,
+    required VoidCallback onTap
+  }) {
+    return Card(
+      elevation: 4,
+      shadowColor: color.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      clipBehavior: Clip.antiAlias, // Để hiệu ứng ripple không bị tràn ra ngoài
+      child: InkWell(
+        onTap: onTap,
+        splashColor: color.withOpacity(0.2),
+        highlightColor: color.withOpacity(0.1),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.5.h),
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: color, width: 8)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 40),
+                  SizedBox(width: 4.w),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      Text('$count câu hỏi', style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary)),
+                    ],
+                  ),
+                ],
               ),
-            ),
-          );
-        },
-        label: const Text("Thêm Câu Hỏi"),
-        icon: const Icon(Icons.add),
-        backgroundColor: AppTheme.primary,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

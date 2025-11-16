@@ -1,5 +1,5 @@
-
-import 'dart:convert'; // Thêm thư viện để dùng Base64
+// Dán toàn bộ code này vào file: lib/presentation/admin_add_category_screen/add_category_screen.dartimport 'dart:convert'; // Thêm thư viện để dùng Base64
+import 'dart:convert';
 import 'dart:io';     // Cần để làm việc với File
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
@@ -46,7 +46,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     }
   }
 
-  // HÀM LƯU DỮ LIỆU (ĐÃ SỬA ĐỂ DÙNG BASE64)
+  // HÀM LƯU DỮ LIỆU
   Future<void> _handleSaveCategory() async {
     // 1. Kiểm tra tính hợp lệ của form và việc chọn ảnh
     if (!_formKey.currentState!.validate()) {
@@ -65,41 +65,39 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
 
     try {
       // 2. Đọc file ảnh dưới dạng một chuỗi các byte
-      print("Bắt đầu đọc file ảnh...");
       List<int> imageBytes = await _imageFile!.readAsBytes();
 
-      // KIỂM TRA KÍCH THƯỚC FILE (Rất quan trọng để không vượt quá giới hạn 1MB của Firestore)
-      // Giới hạn ở đây là 700KB (700 * 1024 bytes)
+      // KIỂM TRA KÍCH THƯỚC FILE
       if (imageBytes.length > 700 * 1024) {
         Fluttertoast.showToast(
           msg: "Ảnh quá lớn. Vui lòng chọn ảnh dưới 700KB.",
           backgroundColor: AppTheme.error,
-          toastLength: Toast.LENGTH_LONG, // Hiển thị lâu hơn
+          toastLength: Toast.LENGTH_LONG,
         );
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
         }
-        return; // Dừng lại nếu ảnh quá lớn
+        return;
       }
 
       // 3. Mã hóa chuỗi byte đó thành một chuỗi văn bản Base64
-      print("Đang chuyển đổi ảnh sang Base64...");
       String base64Image = base64Encode(imageBytes);
 
+      // Lấy tên chủ đề từ controller
+      final String categoryName = _nameController.text.trim();
+
       // 4. Lưu dữ liệu vào Firestore
-      print("Bắt đầu lưu dữ liệu vào Firestore...");
       await FirebaseFirestore.instance.collection('categories').add({
-        'name': _nameController.text.trim(),
+        'name': categoryName,
         'description': _descriptionController.text.trim(),
-        'imageUrl': '', // Để trống vì chúng ta không dùng Storage URL nữa
-        // Thêm trường mới để lưu ảnh Base64
         'imageBase64': 'data:image/png;base64,$base64Image',
-        'questionCount': 0, // Mặc định ban đầu
-        'createdAt': Timestamp.now(), // Lưu thời gian tạo
+        'questionCount': 0,
+        'createdAt': Timestamp.now(),
+        'name_lowercase': categoryName.toLowerCase(),
+
       });
-      print("✅ Lưu dữ liệu vào Firestore thành công!");
 
       Fluttertoast.showToast(msg: "Thêm chủ đề mới thành công!");
 
@@ -107,7 +105,6 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
         Navigator.pop(context, true); // Quay về màn hình dashboard
       }
     } catch (e) {
-      print("🔥 Lỗi khi lưu chủ đề: $e");
       Fluttertoast.showToast(
           msg: "Đã có lỗi xảy ra. Vui lòng thử lại.",
           backgroundColor: AppTheme.error);

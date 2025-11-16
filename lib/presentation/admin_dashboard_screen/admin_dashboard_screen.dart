@@ -42,19 +42,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
   bool _isChartLoading = true;
   double _chartMaxY = 10.0;
 
+  // State cho việc tìm kiếm
+  final TextEditingController _categorySearchController = TextEditingController();
+  final TextEditingController _userSearchController = TextEditingController();
+  String _categorySearchQuery = "";
+  String _userSearchQuery = "";
+
   @override
   void initState() {
     super.initState();
-    // ===== BƯỚC 1: SỬA LỖI - Giảm length của TabController xuống 3 =====
     _tabController = TabController(length: 3, vsync: this);
     _isLoading = true;
     _fetchDashboardData();
     _fetchChartData();
+
+    // Lắng nghe sự thay đổi của các thanh tìm kiếm
+    _categorySearchController.addListener(() {
+      if (mounted) {
+        setState(() {
+          _categorySearchQuery = _categorySearchController.text;
+        });
+      }
+    });
+
+    _userSearchController.addListener(() {
+      if (mounted) {
+        setState(() {
+          _userSearchQuery = _userSearchController.text;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    // Dispose các controller tìm kiếm
+    _categorySearchController.dispose();
+    _userSearchController.dispose();
     super.dispose();
   }
 
@@ -87,12 +112,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     await _fetchChartData();
   }
 
-  // ===== BƯỚC 2: SỬA LỖI - Nâng cấp hàm điều hướng thêm danh mục =====
   Future<void> _navigateAndRefreshForAddCategory() async {
-    // Điều hướng đến màn hình thêm danh mục và chờ kết quả trả về
     final result = await Navigator.pushNamed(context, AppRoutes.addCategoryScreen);
-
-    // Nếu màn hình đó trả về `true` (thêm thành công) thì làm mới dashboard
     if (result == true && mounted) {
       _refreshDashboard();
     }
@@ -109,9 +130,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     }
   }
 
-  // ... các hàm _fetchChartData, _selectDate, ... không thay đổi ...
+  // ... các hàm _fetchChartData, _selectDate, v.v... giữ nguyên ...
   Future<void> _fetchChartData() async {
-    // Bắt đầu loading, reset dữ liệu cũ
     setState(() {
       _isChartLoading = true;
       _groupedData = {};
@@ -213,7 +233,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           _isChartLoading = false;
         });
       }
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -384,7 +403,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                       ],
                     ),
                   ),
-                  // ===== BƯỚC 3: SỬA LỖI - Bỏ tab "Questions" không cần thiết =====
                   TabBar(
                     controller: _tabController,
                     isScrollable: true,
@@ -404,7 +422,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                   _buildDashboardTab(),
                   _buildCategoriesTab(),
                   _buildUsersTab(),
-                  // Container(), // Bỏ đi view của tab "Questions"
                 ],
               ),
             ),
@@ -414,7 +431,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     );
   }
 
-  // ... hàm _buildDashboardTab không thay đổi ...
   Widget _buildDashboardTab() {
     final sortedKeys = _groupedData.keys.toList()..sort();
     final List<FlSpot> chartSpots = [];
@@ -588,119 +604,165 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     );
   }
 
+  // ========================================================
+  // ===== BẮT ĐẦU PHẦN CHỈNH SỬA CHO CHỨC NĂNG TÌM KIẾM =====
+  // ========================================================
 
   Widget _buildCategoriesTab() {
+    // << THÊM MỚI: Thêm câu lệnh print để gỡ lỗi >>
+    final searchQuery = _categorySearchQuery.toLowerCase().trim(); // Chuyển sang chữ thường và loại bỏ khoảng trắng
+    print("Đang tìm kiếm với từ khóa đã xử lý: '$searchQuery'");
+
     return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('categories')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-                child: CircularProgressIndicator(color: AppTheme.primary));
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Đã có lỗi xảy ra: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            // ... Giao diện khi chưa có chủ đề ...
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CustomIconWidget(
-                      iconName: 'category',
-                      size: 64,
-                      color: AppTheme.textSecondary),
-                  SizedBox(height: 2.h),
-                  Text('Chưa có chủ đề nào',
-                      style: AppTheme.lightTheme.textTheme.titleLarge),
-                  SizedBox(height: 1.h),
-                  Text('Nhấn nút + để thêm chủ đề đầu tiên của bạn!',
-                      style: AppTheme.lightTheme.textTheme.bodyMedium),
-                ],
+      body: Column(
+        children: [
+          // Thanh tìm kiếm cho chủ đề (Giữ nguyên)
+          Padding(
+            padding: EdgeInsets.fromLTRB(4.w, 2.h, 4.w, 0),
+            child: TextField(
+              controller: _categorySearchController,
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm chủ đề theo tên...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.zero,
+                suffixIcon: _categorySearchQuery.isNotEmpty
+                    ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => _categorySearchController.clear(),
+                )
+                    : null,
               ),
-            );
-          }
-          final categories = snapshot.data!.docs;
-          return ListView.builder(
-            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final category = categories[index];
-              final data = category.data() as Map<String, dynamic>;
-              final String? base64String = data['imageBase64'];
-              Widget imageWidget;
-              if (base64String != null && base64String.isNotEmpty) {
-                final String pureBase64 = base64String.split(',').last;
-                try {
-                  final imageBytes = base64Decode(pureBase64);
-                  imageWidget = Image.memory(
-                    imageBytes,
-                    width: 20.w,
-                    height: 10.h,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        Icon(Icons.broken_image, size: 24, color: AppTheme.error),
-                  );
-                } catch (e) {
-                  imageWidget =
-                      Icon(Icons.broken_image, size: 24, color: AppTheme.error);
+            ),
+          ),
+
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              // << THAY ĐỔI: Sử dụng biến searchQuery đã được trim() và toLowerCase() >>
+              stream: (searchQuery.isEmpty)
+                  ? FirebaseFirestore.instance
+                  .collection('categories')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots()
+                  : FirebaseFirestore.instance
+                  .collection('categories')
+                  .where('name_lowercase', isGreaterThanOrEqualTo: searchQuery)
+                  .where('name_lowercase', isLessThanOrEqualTo: searchQuery + '\uf8ff')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                // Phần builder bên dưới giữ nguyên...
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator(color: AppTheme.primary));
                 }
-              } else {
-                imageWidget = Container(
-                  width: 20.w,
-                  height: 10.h,
-                  color: AppTheme.surface,
-                  child: Icon(Icons.image_not_supported,
-                      color: AppTheme.textSecondary),
-                );
-              }
-              return Card(
-                margin: EdgeInsets.only(bottom: 2.h),
-                elevation: 2,
-                shadowColor: AppTheme.shadowLight,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  contentPadding:
-                  EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8.0),
-                    child: imageWidget,
-                  ),
-                  title: Text(
-                    data['name'] ?? 'Chủ đề không tên',
-                    style: AppTheme.lightTheme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    '${data['questionCount'] ?? 0} câu hỏi',
-                    style: AppTheme.lightTheme.textTheme.bodySmall
-                        ?.copyWith(color: AppTheme.textSecondary),
-                  ),
-                  trailing: Icon(Icons.arrow_forward_ios,
-                      size: 16, color: AppTheme.textSecondary),
-                  onTap: () {
-                    final String categoryId = category.id;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AdminCategoryManagementScreen(categoryId: categoryId),
+                if (snapshot.hasError) {
+                  // << THÊM MỚI: In lỗi ra console để dễ thấy >>
+                  print("🔥 LỖI FIREBASE: ${snapshot.error}");
+                  return Center(child: Text('Đã có lỗi xảy ra: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CustomIconWidget(iconName: 'search_off', size: 64, color: AppTheme.textSecondary),
+                        SizedBox(height: 2.h),
+                        Text(
+                          _categorySearchQuery.isEmpty ? 'Chưa có chủ đề nào' : 'Không tìm thấy kết quả',
+                          style: AppTheme.lightTheme.textTheme.titleLarge,
+                        ),
+                        if (_categorySearchQuery.isEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: 1.h),
+                            child: Text(
+                              'Nhấn nút + để thêm chủ đề đầu tiên của bạn!',
+                              style: AppTheme.lightTheme.textTheme.bodyMedium,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }
+                final categories = snapshot.data!.docs;
+                return ListView.builder(
+                  padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                  itemCount: categories.length,
+                  itemBuilder: (context, index) {
+                    final category = categories[index];
+                    final data = category.data() as Map<String, dynamic>;
+                    final String? base64String = data['imageBase64'];
+                    Widget imageWidget;
+                    if (base64String != null && base64String.isNotEmpty) {
+                      final String pureBase64 = base64String.split(',').last;
+                      try {
+                        final imageBytes = base64Decode(pureBase64);
+                        imageWidget = Image.memory(
+                          imageBytes,
+                          width: 20.w,
+                          height: 10.h,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Icon(Icons.broken_image, size: 24, color: AppTheme.error),
+                        );
+                      } catch (e) {
+                        imageWidget =
+                            Icon(Icons.broken_image, size: 24, color: AppTheme.error);
+                      }
+                    } else {
+                      imageWidget = Container(
+                        width: 20.w,
+                        height: 10.h,
+                        color: AppTheme.surface,
+                        child: Icon(Icons.image_not_supported,
+                            color: AppTheme.textSecondary),
+                      );
+                    }
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 2.h),
+                      elevation: 2,
+                      shadowColor: AppTheme.shadowLight,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      child: ListTile(
+                        contentPadding:
+                        EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8.0),
+                          child: imageWidget,
+                        ),
+                        title: Text(
+                          data['name'] ?? 'Chủ đề không tên',
+                          style: AppTheme.lightTheme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${data['questionCount'] ?? 0} câu hỏi',
+                          style: AppTheme.lightTheme.textTheme.bodySmall
+                              ?.copyWith(color: AppTheme.textSecondary),
+                        ),
+                        trailing: Icon(Icons.arrow_forward_ios,
+                            size: 16, color: AppTheme.textSecondary),
+                        onTap: () {
+                          final String categoryId = category.id;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AdminCategoryManagementScreen(categoryId: categoryId),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
-      // ===== BƯỚC 4: SỬA LỖI - Gọi đến hàm điều hướng mới =====
       floatingActionButton: FloatingActionButton(
         onPressed: _navigateAndRefreshForAddCategory,
         backgroundColor: AppTheme.primary,
@@ -710,57 +772,95 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     );
   }
 
-  // ... các hàm _buildUsersTab, _buildLoadingGrid không đổi ...
   Widget _buildUsersTab() {
     return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Đã có lỗi xảy ra: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('Chưa có người dùng nào.'));
-          }
+      body: Column(
+        children: [
+          // Thanh tìm kiếm cho người dùng
+          Padding(
+            padding: EdgeInsets.fromLTRB(4.w, 2.h, 4.w, 0),
+            child: TextField(
+              controller: _userSearchController,
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm người dùng theo email...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.zero,
+                suffixIcon: _userSearchQuery.isNotEmpty
+                    ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => _userSearchController.clear(),
+                )
+                    : null,
+              ),
+            ),
+          ),
 
-          final users = snapshot.data!.docs;
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              // Cập nhật câu truy vấn stream để tìm kiếm theo email
+              stream: (_userSearchQuery.isEmpty)
+                  ? FirebaseFirestore.instance.collection('users').snapshots()
+                  : FirebaseFirestore.instance
+                  .collection('users')
+                  .where('email', isGreaterThanOrEqualTo: _userSearchQuery.toLowerCase())
+                  .where('email', isLessThanOrEqualTo: _userSearchQuery.toLowerCase() + '\uf8ff')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Đã có lỗi xảy ra: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                      child: Text(_userSearchQuery.isEmpty
+                          ? 'Chưa có người dùng nào.'
+                          : 'Không tìm thấy người dùng nào.'));
+                }
 
-          return ListView.builder(
-            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-            itemCount: users.length,
-            itemBuilder: (context, index) {
-              final user = users[index];
-              final userData = user.data() as Map<String, dynamic>;
-              final String fullName = userData['displayName'] ?? 'Người dùng không tên';
-              final String email = userData['email'] ?? 'Không có email';
-              final String photoURL = userData['photoURL'] ?? '';
+                final users = snapshot.data!.docs;
 
-              return Card(
-                margin: EdgeInsets.only(bottom: 2.h),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
-                    child: photoURL.isEmpty ? const Icon(Icons.person) : null,
-                  ),
-                  title: Text(fullName),
-                  subtitle: Text(email),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AdminUserDetailScreen(userId: user.id),
+                // Code hiển thị ListView.builder giữ nguyên như file gốc của bạn
+                return ListView.builder(
+                  padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                  itemCount: users.length,
+                  itemBuilder: (context, index) {
+                    final user = users[index];
+                    final userData = user.data() as Map<String, dynamic>;
+                    final String fullName = userData['displayName'] ?? 'Người dùng không tên';
+                    final String email = userData['email'] ?? 'Không có email';
+                    final String photoURL = userData['photoURL'] ?? '';
+
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 2.h),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
+                          child: photoURL.isEmpty ? const Icon(Icons.person) : null,
+                        ),
+                        title: Text(fullName),
+                        subtitle: Text(email),
+                        trailing: const Icon(Icons.arrow_forward_ios),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AdminUserDetailScreen(userId: user.id),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _navigateAndRefreshForAddUser,

@@ -8,11 +8,14 @@ import '../../core/app_export.dart';
 class AddEditQuestionScreen extends StatefulWidget {
   final String categoryId;
   final String? questionId;
+  // << 1. THÊM THAM SỐ MỚI >>
+  final String? initialDifficulty;
 
   const AddEditQuestionScreen({
     Key? key,
     required this.categoryId,
     this.questionId,
+    this.initialDifficulty, // Thêm vào constructor
   }) : super(key: key);
 
   @override
@@ -42,6 +45,14 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     super.initState();
     if (_isEditMode) {
       _loadQuestionData();
+    } else {
+      // << 2. GÁN GIÁ TRỊ MẶC ĐỊNH KHI THÊM MỚI >>
+      // Nếu có độ khó mặc định được truyền vào, hãy gán nó
+      if (widget.initialDifficulty != null) {
+        setState(() {
+          _selectedDifficulty = widget.initialDifficulty;
+        });
+      }
     }
   }
 
@@ -71,7 +82,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
         }
       }
     } catch (e) {
-      // Xử lý lỗi
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải dữ liệu câu hỏi: $e')));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -139,7 +150,6 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           final oldField = _getDifficultyField(_originalDifficulty!);
           final newField = _getDifficultyField(_selectedDifficulty!);
 
-          // Dùng set + merge để đảm bảo an toàn
           if (oldField.isNotEmpty) {
             batch.set(categoryRef, {oldField: FieldValue.increment(-1)}, SetOptions(merge: true));
           }
@@ -148,14 +158,10 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
           }
         }
       } else {
-        // --- CHẾ ĐỘ THÊM MỚI ---
         questionData['createdAt'] = FieldValue.serverTimestamp();
         final newQuestionRef = collectionRef.doc();
         batch.set(newQuestionRef, questionData);
 
-        // ==========================================================
-        // =====    SỬA LỖI: DÙNG SET + MERGE THAY CHO UPDATE    =====
-        // ==========================================================
         final difficultyField = _getDifficultyField(_selectedDifficulty!);
         batch.set(
           categoryRef,
@@ -164,7 +170,7 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
             if (difficultyField.isNotEmpty)
               difficultyField: FieldValue.increment(1),
           },
-          SetOptions(merge: true), // Quan trọng nhất!
+          SetOptions(merge: true),
         );
       }
 
@@ -312,3 +318,4 @@ class _AddEditQuestionScreenState extends State<AddEditQuestionScreen> {
     );
   }
 }
+

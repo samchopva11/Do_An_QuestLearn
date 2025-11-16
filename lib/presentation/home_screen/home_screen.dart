@@ -6,10 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:app_demo/presentation/main_screen/main_screen.dart';
+import 'dart:convert'; // << THÊM LẠI
 import '../../core/app_export.dart';
 import './widgets/greeting_header_widget.dart';
 
-// <<<< TẠO CÁC WIDGET MỚI ĐỂ DỄ QUẢN LÝ >>>>
 
 // Widget mới cho phần "Đang học"
 class EnrolledCoursesSection extends StatelessWidget {
@@ -30,6 +30,7 @@ class EnrolledCoursesSection extends StatelessWidget {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(title: "Đang học", onSeeMore: onSeeMoreTap),
         StreamBuilder<QuerySnapshot>(
@@ -45,7 +46,6 @@ class EnrolledCoursesSection extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              // <<<< THAY ĐỔI GIAO DIỆN: Thẻ giới thiệu hấp dẫn hơn >>>>
               return Container(
                 padding: const EdgeInsets.all(16.0),
                 decoration: BoxDecoration(
@@ -65,24 +65,39 @@ class EnrolledCoursesSection extends StatelessWidget {
             }
 
             final docs = snapshot.data!.docs;
-            return ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: docs.length,
-              itemBuilder: (context, index) {
-                final progressData = docs[index].data() as Map<String, dynamic>;
-                final categoryId = docs[index].id;
+            return Column(
+              children: docs.map((doc) {
+                final progressData = doc.data() as Map<String, dynamic>;
+                final categoryId = doc.id;
 
                 return FutureBuilder<DocumentSnapshot>(
                   future: FirebaseFirestore.instance.collection('categories').doc(categoryId).get(),
                   builder: (context, categorySnapshot) {
-                    if (!categorySnapshot.hasData) {
-                      return const Card(child: ListTile(title: Text("Đang tải...")));
+                    if (categorySnapshot.connectionState == ConnectionState.waiting) {
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: SizedBox(
+                          height: 90,
+                          child: Center(child: Text("Đang tải khóa học...")),
+                        ),
+                      );
                     }
+
+                    if (!categorySnapshot.hasData || !categorySnapshot.data!.exists) {
+                      return Card(
+                          color: Colors.grey[200],
+                          margin: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: const ListTile(
+                            leading: Icon(Icons.error_outline, color: Colors.red),
+                            title: Text('Chủ đề này không còn tồn tại'),
+                            subtitle: Text('Bạn có thể xóa nó trong danh sách đã đăng ký.'),
+                          )
+                      );
+                    }
+
                     final categoryData = categorySnapshot.data!.data() as Map<String, dynamic>;
                     categoryData['id'] = categoryId;
 
-                    // <<<< THAY ĐỔI GIAO DIỆN: Thẻ tiến độ đẹp hơn >>>>
                     return Card(
                       elevation: 3,
                       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -91,8 +106,16 @@ class EnrolledCoursesSection extends StatelessWidget {
                         contentPadding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
                         leading: CircleAvatar(
                           backgroundColor: AppTheme.primary.withOpacity(0.1),
-                          child: (categoryData['imageUrl'] != null && categoryData['imageUrl'].isNotEmpty)
-                              ? ClipOval(child: Image.network(categoryData['imageUrl'], fit: BoxFit.cover, width: 40, height: 40))
+                          child: (categoryData['imageBase64'] != null && categoryData['imageBase64'].isNotEmpty)
+                              ? ClipOval(
+                              child: Image.memory(
+                                base64Decode(categoryData['imageBase64'].split(',').last),
+                                fit: BoxFit.cover,
+                                width: 40,
+                                height: 40,
+                                errorBuilder: (c, e, s) => Icon(Icons.school_outlined, color: AppTheme.primary),
+                              )
+                          )
                               : Icon(Icons.school_outlined, color: AppTheme.primary),
                         ),
                         title: Text(categoryData['name'] ?? 'Chủ đề không tên', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -121,7 +144,7 @@ class EnrolledCoursesSection extends StatelessWidget {
                     );
                   },
                 );
-              },
+              }).toList(),
             );
           },
         ),
@@ -144,6 +167,7 @@ class SuggestedCoursesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(title: "Gợi ý cho bạn", onSeeMore: onSeeMoreTap),
         StreamBuilder<QuerySnapshot>(
@@ -167,14 +191,13 @@ class SuggestedCoursesSection extends StatelessWidget {
                 crossAxisCount: 2,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 0.9, // <<<< THAY ĐỔI GIAO DIỆN: Điều chỉnh tỷ lệ thẻ
+                childAspectRatio: 0.9,
               ),
               itemCount: docs.length,
               itemBuilder: (context, index) {
                 final data = docs[index].data() as Map<String, dynamic>;
                 data['id'] = docs[index].id;
 
-                // <<<< THAY ĐỔI GIAO DIỆN: Thẻ gợi ý đẹp hơn >>>>
                 return GestureDetector(
                   onTap: () => onCategoryTap(data),
                   child: Card(
@@ -188,13 +211,10 @@ class SuggestedCoursesSection extends StatelessWidget {
                           flex: 3,
                           child: Container(
                             color: Colors.grey[200],
-                            child: (data['imageUrl'] != null && data['imageUrl'].isNotEmpty)
-                                ? Image.network(
-                              data['imageUrl'],
+                            child: (data['imageBase64'] != null && data['imageBase64'].isNotEmpty)
+                                ? Image.memory(
+                              base64Decode(data['imageBase64'].split(',').last),
                               fit: BoxFit.cover,
-                              loadingBuilder: (context, child, progress) {
-                                return progress == null ? child : const Center(child: CircularProgressIndicator());
-                              },
                               errorBuilder: (context, error, stackTrace) {
                                 return Icon(Icons.school, size: 40, color: AppTheme.primary.withOpacity(0.5));
                               },
@@ -229,7 +249,7 @@ class SuggestedCoursesSection extends StatelessWidget {
   }
 }
 
-// Widget helper cho tiêu đề các phần
+// Widget helper cho tiêu đề các phần (Giữ nguyên)
 class _SectionHeader extends StatelessWidget {
   final String title;
   final VoidCallback onSeeMore;
@@ -239,7 +259,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0), // <<<< THAY ĐỔI GIAO DIỆN: Tăng khoảng cách
+      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -260,7 +280,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// <<<< PHẦN CHÍNH: CẬP NHẬT HOMESCREEN STATEFULWIDGET >>>>
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -270,22 +289,16 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String _userName = 'bạn';
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchUserData();
-  }
+  // <<<< BƯỚC 1: BỎ HÀM `_fetchUserData` và `_userName` >>>>
+  // String _userName = 'bạn';
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   _fetchUserData();
+  // }
+  // void _fetchUserData() { ... }
 
-  void _fetchUserData() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null && mounted) {
-      setState(() {
-        _userName = user.displayName ?? user.email?.split('@')[0] ?? 'bạn';
-      });
-    }
-  }
 
   void _onCategoryTap(Map<String, dynamic> category) {
     final String categoryId = category['id'];
@@ -308,14 +321,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // <<<< THAY ĐỔI GIAO DIỆN: Thêm màu nền tinh tế >>>>
-      backgroundColor: Colors.grey[50], // Thay vì màu trắng tinh
+      backgroundColor: Colors.grey[50],
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // <<<< THAY ĐỔI GIAO DIỆN: Thêm một lớp nền trang trí cho phần header >>>>
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 32.0),
@@ -323,8 +334,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppTheme.primary,
                   borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
                 ),
-                child: GreetingHeaderWidget(
-                  userName: _userName,
+                // <<<< BƯỚC 2: THAY THẾ WIDGET CŨ BẰNG STREAMBUILDER >>>>
+                child: StreamBuilder<User?>(
+                  // Lắng nghe sự thay đổi của người dùng hiện tại
+                  stream: FirebaseAuth.instance.authStateChanges(),
+                  builder: (context, snapshot) {
+                    // Lấy tên người dùng một cách linh hoạt
+                    String userName = 'bạn';
+                    if (snapshot.hasData && snapshot.data != null) {
+                      final user = snapshot.data!;
+                      userName = user.displayName ?? user.email?.split('@')[0] ?? 'bạn';
+                    }
+                    // Trả về GreetingHeaderWidget với tên đã được cập nhật
+                    return GreetingHeaderWidget(userName: userName);
+                  },
                 ),
               ),
               Padding(
