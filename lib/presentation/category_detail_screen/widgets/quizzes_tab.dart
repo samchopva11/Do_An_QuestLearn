@@ -19,62 +19,72 @@ class QuizzesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Lấy số lượng câu hỏi
     final int easyCount = category["easyCount"] ?? 0;
     final int mediumCount = category["mediumCount"] ?? 0;
     final int hardCount = category["hardCount"] ?? 0;
+
+    // ==========================================================
+    // =====       SỬA LỖI: LẤY THỜI GIAN TỪ CATEGORY        =====
+    // ==========================================================
+    // Lấy thời gian làm bài (tính bằng phút) từ dữ liệu category
+    // và cung cấp giá trị mặc định nếu không có
+    final int easyDuration = category['easyDuration'] ?? 20;
+    final int mediumDuration = category['mediumDuration'] ?? 45;
+    final int hardDuration = category['hardDuration'] ?? 60;
 
     return SingleChildScrollView(
       padding: EdgeInsets.all(4.w),
       child: Column(
         children: [
-          // ==========================================================
-          // =====        SỬA LỖI: TRUYỀN GIÁ TRỊ TIẾNG VIỆT       =====
-          // ==========================================================
+          // Truyền thời gian tương ứng vào mỗi card
           _buildDifficultyCard(
-            context,
-            "Dễ",
-            "Dễ", // Giá trị truyền đi là "Dễ"
-            easyCount,
-            0,
-            AppTheme.success,
-            'lightbulb_outline',
+            context: context,
+            title: "Dễ",
+            difficulty: "Dễ",
+            questionCount: easyCount,
+            durationInMinutes: easyDuration, // << TRUYỀN THỜI GIAN DỄ
+            bestScore: 0,
+            color: AppTheme.success,
+            iconName: 'lightbulb_outline',
           ),
           SizedBox(height: 3.h),
           _buildDifficultyCard(
-            context,
-            "Trung bình",
-            "Trung bình", // Giá trị truyền đi là "Trung bình"
-            mediumCount,
-            0,
-            AppTheme.warning,
-            'psychology_alt',
+            context: context,
+            title: "Trung bình",
+            difficulty: "Trung bình",
+            questionCount: mediumCount,
+            durationInMinutes: mediumDuration, // << TRUYỀN THỜI GIAN TRUNG BÌNH
+            bestScore: 0,
+            color: AppTheme.warning,
+            iconName: 'psychology_alt',
           ),
           SizedBox(height: 3.h),
           _buildDifficultyCard(
-            context,
-            "Khó",
-            "Khó", // Giá trị truyền đi là "Khó"
-            hardCount,
-            0,
-            AppTheme.error,
-            'local_fire_department',
+            context: context,
+            title: "Khó",
+            difficulty: "Khó",
+            questionCount: hardCount,
+            durationInMinutes: hardDuration, // << TRUYỀN THỜI GIAN KHÓ
+            bestScore: 0,
+            color: AppTheme.error,
+            iconName: 'local_fire_department',
           ),
         ],
       ),
     );
   }
 
-  // ... các hàm helper còn lại giữ nguyên ...
-  Widget _buildDifficultyCard(
-      BuildContext context,
-      String title,
-      String difficulty,
-      int questionCount,
-      int bestScore,
-      Color color,
-      String iconName,
-      ) {
-    // Logic trong này giữ nguyên
+  Widget _buildDifficultyCard({
+    required BuildContext context,
+    required String title,
+    required String difficulty,
+    required int questionCount,
+    required int durationInMinutes, // << THÊM THAM SỐ NHẬN THỜI GIAN
+    required int bestScore,
+    required Color color,
+    required String iconName,
+  }) {
     final bool hasAttempted = bestScore > 0;
     final bool hasQuestions = questionCount > 0;
 
@@ -103,8 +113,10 @@ class QuizzesTab extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            iconName == 'lightbulb_outline' ? Icons.lightbulb_outline
-                : iconName == 'psychology_alt' ? Icons.psychology_alt
+            iconName == 'lightbulb_outline'
+                ? Icons.lightbulb_outline
+                : iconName == 'psychology_alt'
+                ? Icons.psychology_alt
                 : Icons.local_fire_department,
             color: color,
             size: 24,
@@ -154,10 +166,13 @@ class QuizzesTab extends StatelessWidget {
                       ),
                     ),
                     SizedBox(width: 4.w),
+                    // ==========================================================
+                    // =====         SỬA LỖI: HIỂN THỊ ĐÚNG THỜI GIAN      =====
+                    // ==========================================================
                     Expanded(
                       child: _buildInfoItem(
-                        "Thời gian ước tính",
-                        "${(questionCount * 1.5).round()} phút",
+                        "Thời gian", // Bỏ chữ "ước tính"
+                        "$durationInMinutes phút", // Hiển thị thời gian đã nhận
                         Icons.access_time,
                       ),
                     ),
@@ -254,6 +269,7 @@ class QuizzesTab extends StatelessWidget {
   }
 
   Widget _buildInfoItem(String label, String value, IconData icon) {
+    // Giữ nguyên widget này
     return Container(
       padding: EdgeInsets.all(3.w),
       decoration: BoxDecoration(
@@ -262,7 +278,9 @@ class QuizzesTab extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(icon, color: AppTheme.lightTheme.colorScheme.onSurfaceVariant, size: 20),
+          Icon(icon,
+              color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
+              size: 20),
           SizedBox(height: 1.h),
           Text(
             value,

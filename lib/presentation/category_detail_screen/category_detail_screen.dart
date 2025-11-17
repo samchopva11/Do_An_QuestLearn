@@ -31,11 +31,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   late TabController _tabController;
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
-
-  // ==========================================================
-  // =====        SỬA LỖI 1: THÊM BIẾN TRẠNG THÁI           =====
-  // ==========================================================
   bool _isEnrolling = false;
+
+  // << THÊM BIẾN ĐỂ LƯU DỮ LIỆU CATEGORY >>
+  Map<String, dynamic>? _categoryData;
 
   @override
   void initState() {
@@ -49,26 +48,43 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
     super.dispose();
   }
 
+  // ==========================================================
+  // =====        SỬA LỖI: CẬP NHẬT HÀM START QUIZ        =====
+  // ==========================================================
   void _handleStartQuiz(String difficulty) {
+    if (_categoryData == null) return; // Kiểm tra an toàn
+
+    // Lấy thông tin thời gian từ _categoryData
+    // Ví dụ: easyDuration, mediumDuration, hardDuration (tính bằng phút)
+    int durationInMinutes = 30; // Mặc định là 30 phút nếu không có dữ liệu
+    if (difficulty == 'Dễ') {
+      durationInMinutes = _categoryData!['easyDuration'] ?? 30;
+    } else if (difficulty == 'Trung bình') {
+      durationInMinutes = _categoryData!['mediumDuration'] ?? 45;
+    } else if (difficulty == 'Khó') {
+      durationInMinutes = _categoryData!['hardDuration'] ?? 60;
+    }
+
+    // Chuyển đổi phút sang giây
+    final int durationInSeconds = durationInMinutes * 60;
+
+    // Điều hướng và truyền tham số mới
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => QuizScreen(
           categoryId: widget.categoryId,
           difficulty: difficulty,
+          durationInSeconds: durationInSeconds, // << TRUYỀN THỜI GIAN VÀO ĐÂY
         ),
       ),
     );
   }
 
-  // ==========================================================
-  // =====        SỬA LỖI 1: CẬP NHẬT HÀM ENROLLMENT       =====
-  // ==========================================================
   Future<void> _handleEnrollment(bool isEnrolled) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    // Báo cho giao diện biết là đang bắt đầu xử lý
     setState(() {
       _isEnrolling = true;
     });
@@ -90,14 +106,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
         });
       }
     } catch (e) {
-      // Xử lý nếu có lỗi xảy ra
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Đã có lỗi xảy ra: $e')),
         );
       }
     } finally {
-      // Bất kể thành công hay thất bại, báo cho giao diện là đã xử lý xong
       if (mounted) {
         setState(() {
           _isEnrolling = false;
@@ -114,12 +128,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
       stream: _combineStreams(user),
       builder: (context, combinedSnapshot) {
         if (combinedSnapshot.connectionState == ConnectionState.waiting && !combinedSnapshot.hasData) {
-          // Chỉ hiển thị loading toàn màn hình khi stream chưa có dữ liệu lần đầu
           return _buildLoadingState();
         }
 
         if (combinedSnapshot.hasError) {
-          // SỬA LỖI 2: Dùng widget hiển thị lỗi riêng
           return _buildErrorState(combinedSnapshot.error.toString());
         }
 
@@ -134,7 +146,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
           return _buildErrorState("Không tìm thấy chủ đề với ID này.");
         }
 
-        final categoryData = categorySnapshot.data() as Map<String, dynamic>;
+        // << LƯU DỮ LIỆU VÀO BIẾN STATE >>
+        _categoryData = categorySnapshot.data() as Map<String, dynamic>;
 
         final bool isEnrolled = progressSnapshot != null && progressSnapshot.exists;
 
@@ -146,9 +159,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
           body: Column(
             children: [
               CategoryHeroSection(
-                category: categoryData,
+                category: _categoryData!,
                 isEnrolled: isEnrolled,
-                // Chức năng enroll trong hero section tạm thời vô hiệu hoá để tập trung vào nút chính
                 onEnrollmentToggle: () {},
               ),
               Container(
@@ -166,14 +178,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    OverviewTab(category: categoryData),
+                    OverviewTab(category: _categoryData!),
                     QuizzesTab(
-                      category: categoryData,
+                      category: _categoryData!,
                       onStartQuiz: _handleStartQuiz,
                       onReviewResults: (difficulty) {},
                     ),
                     ProgressTab(
-                      category: categoryData,
+                      category: _categoryData!,
                       userProgress: userProgressData,
                     ),
                   ],
@@ -183,7 +195,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
           ),
           bottomNavigationBar: EnrollmentActionButton(
             isEnrolled: isEnrolled,
-            // SỬA LỖI 1: Kết hợp trạng thái loading của Stream và của nút bấm
             isLoading: (combinedSnapshot.connectionState == ConnectionState.waiting) || _isEnrolling,
             onEnroll: () => _handleEnrollment(false),
             onUnenroll: () => _handleEnrollment(true),
@@ -213,7 +224,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
   }
 
   Widget _buildTab(String iconName, String text, int index) {
-    // ... Giữ nguyên không đổi
     return AnimatedBuilder(
       animation: _tabController.animation!,
       builder: (BuildContext context, Widget? child) {
@@ -242,9 +252,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
     );
   }
 
-  // ==========================================================
-  // =====        SỬA LỖI 2: SỬA LẠI WIDGET LOADING       =====
-  // ==========================================================
   Widget _buildLoadingState() {
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -253,12 +260,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircularProgressIndicator(
-              color: AppTheme.primary, // Đổi màu cho đẹp hơn
+              color: AppTheme.primary,
             ),
             SizedBox(height: 3.h),
             Text(
               "Đang tải chi tiết chủ đề...",
-              // Chỉnh lại style cho nhỏ và màu dễ nhìn
               style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(
                 color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
               ),
@@ -269,9 +275,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen>
     );
   }
 
-  // ==========================================================
-  // =====        SỬA LỖI 2: TẠO WIDGET HIỂN THỊ LỖI       =====
-  // ==========================================================
   Widget _buildErrorState(String error) {
     return Scaffold(
       backgroundColor: AppTheme.background,
